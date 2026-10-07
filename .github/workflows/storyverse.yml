@@ -57,6 +57,28 @@ jobs:
             -project StoryVerse.xcodeproj \
             -scheme StoryVerse \
             -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             | tee build.log | grep -E "error:|warning: .*StoryVerse|Test Case|Executed|BUILD|TEST" || true
           grep -q "TEST SUCCEEDED" build.log
+      - name: Capture simulator screenshots
+        env:
+          UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/StoryVerse.app
+          BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")
+          mkdir -p screenshots
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          xcrun simctl install "$UDID" "$APP"
+          shot() { sleep 8; xcrun simctl io "$UDID" screenshot "screenshots/$1.png"; xcrun simctl terminate "$UDID" "$BUNDLE" || true; }
+          xcrun simctl launch "$UDID" "$BUNDLE"; shot 1-launch
+          xcrun simctl launch "$UDID" "$BUNDLE" -StoryVerseShowAccount; shot 2-account
+          ls -la screenshots
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: storyverse/ios/screenshots

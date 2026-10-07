@@ -63,13 +63,13 @@ final class AppleSignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
         continuation = nil
     }
 
-    static func makeNonce(length: Int = 32) -> String {
+    nonisolated static func makeNonce(length: Int = 32) -> String {
         let characters = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         var generator = SystemRandomNumberGenerator()
         return String((0..<length).map { _ in characters.randomElement(using: &generator)! })
     }
 
-    static func sha256(_ input: String) -> String {
+    nonisolated static func sha256(_ input: String) -> String {
         SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -24,7 +24,13 @@ struct ContentView: View {
                 EmptyView()
             }
         }
-        .onAppear { if store.webView.url == nil { store.loadStart() } }
+        .onAppear {
+            if store.webView.url == nil { store.loadStart() }
+            #if DEBUG
+            // Lets CI capture the Account screen: launch with -StoryVerseShowAccount.
+            if ProcessInfo.processInfo.arguments.contains("-StoryVerseShowAccount") { store.showAccount = true }
+            #endif
+        }
         .sheet(isPresented: $store.showAccount) {
             AccountView(store: store)
                 .environmentObject(session)
