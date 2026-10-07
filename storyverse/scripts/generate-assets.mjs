@@ -10,6 +10,7 @@ const types = {
   '.js': 'text/javascript; charset=utf-8', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 async function walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -18,7 +19,7 @@ async function walk(dir) {
     const path = '/' + absolute.slice(source.length + 1).split('\\').join('/');
     const ext = extname(entry.name).toLowerCase();
     const bytes = await readFile(absolute);
-    const binary = !['.html', '.css', '.js', '.svg'].includes(ext);
+    const binary = !['.html', '.css', '.js', '.svg', '.webmanifest'].includes(ext);
     items.push([path, { type: types[ext] ?? 'application/octet-stream', body: binary ? bytes.toString('base64') : bytes.toString('utf8'), binary }]);
   }
 }

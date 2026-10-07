@@ -325,4 +325,26 @@ assert.doesNotMatch(videoRenderer, /\$\('\[/u, 'the renderer never passes a CSS 
 assert.doesNotMatch(videoRenderer, /path: 'bedtime'/u, 'video requests use the project’s own path');
 assert.match(studioScript, /storyverse:draft:/u, 'studio drafts are autosaved');
 
-console.log('Worker checks passed: auth, input validation, all four story paths, Claude structured outputs and refusals, provider-specific errors, story and scene planning, image-model availability, authenticated Veo jobs and limits, signed job access, secure video download, generated WAV voiceover, and studio wiring.');
+// ---- installable app (iOS Home Screen / PWA) ----
+const manifestResponse = await worker.fetch(new Request('https://storyverse.test/manifest.webmanifest'), {});
+assert.equal(manifestResponse.status, 200);
+assert.match(manifestResponse.headers.get('content-type'), /application\/manifest\+json/u);
+const appManifest = await manifestResponse.json();
+assert.equal(appManifest.display, 'standalone');
+assert.ok(appManifest.icons.some((icon) => icon.sizes === '512x512' && icon.purpose === 'maskable'), 'manifest has a maskable icon');
+for (const src of [...appManifest.icons.map((icon) => icon.src), '/icons/apple-touch-icon.png']) {
+  const icon = await worker.fetch(new Request(`https://storyverse.test${src}`), {});
+  assert.equal(icon.status, 200, `${src} is served`);
+  const bytes = new Uint8Array(await icon.arrayBuffer());
+  assert.deepEqual([...bytes.slice(1, 4)], [0x50, 0x4e, 0x47], `${src} is a PNG`);
+}
+const serviceWorker = await (await worker.fetch(new Request('https://storyverse.test/sw.js'), {})).text();
+const shell = JSON.parse(serviceWorker.match(/const SHELL = (\[[\s\S]*?\]);/u)[1].replace(/'/gu, '"').replace(/,\s*\]/u, ']'));
+// cache.addAll rejects if any entry fails, which would silently disable offline launch.
+for (const entry of shell) assert.equal((await worker.fetch(new Request(`https://storyverse.test${entry}`), {})).status, 200, `service worker precache entry ${entry} exists`);
+for (const page of ['index.html', 'create.html', 'studio.html']) {
+  const html = await readFile(new URL(`../site-assets/${page}`, import.meta.url), 'utf8');
+  for (const tag of ['rel="manifest"', 'rel="apple-touch-icon"', 'apple-mobile-web-app-capable', 'viewport-fit=cover', 'src="pwa.js']) assert.ok(html.includes(tag), `${page} includes ${tag}`);
+}
+
+console.log('Worker checks passed: auth, input validation, all four story paths, Claude structured outputs and refusals, provider-specific errors, story and scene planning, image-model availability, authenticated Veo jobs and limits, signed job access, secure video download, generated WAV voiceover, studio wiring, and the installable app.');

@@ -13,6 +13,21 @@ StoryVerse is a multi-page storytelling app for creating stories, planning scene
 - Built Worker artifact in `dist/`
 - Build, validation, and mocked worker checks
 
+## Install on iPhone and iPad
+
+StoryVerse is an installable web app, so it needs no App Store, Mac, or Apple Developer account.
+
+1. Open the deployed site in Safari (or any iOS browser on iOS 16.4+).
+2. Tap **Share**, then **Add to Home Screen**, then **Add**. The site also shows this tip once, at the bottom of the screen.
+3. Launch StoryVerse from its Home Screen icon. It opens full-screen on the path chooser, with long-press shortcuts to each studio.
+
+The app opens offline: the app shell, studio settings, and saved drafts are cached by `site-assets/sw.js`. AI generation, sign-in, and video export need a connection and are never cached. Redeploying updates the app on its next online launch; bump `CACHE` in `sw.js` whenever you change the precached file list.
+
+Things to know on iOS:
+- The installed app keeps its own storage, separate from Safari. Drafts started in Safari don't appear in the app (use **Save project file** and **Open a saved project** to move them), and you sign in again inside the app.
+- Sign-in goes through `/signin-with-chatgpt`, which is provided by the Site runtime. Confirm on a real device that signing in returns you to the installed app before announcing it.
+- Use **Share video to an app** to save a rendered video to Photos or Files; it is more reliable than the download button inside the installed app.
+
 ## Requirements
 
 - Node.js 20 or newer
@@ -52,6 +67,7 @@ Video export is available when a story fits `MAX_VIDEO_CLIPS` (24 clips of about
   - `studio.html`, `studio.js`, `studio.css` — the shared five-step studio
   - `video-renderer.js` — Veo clip generation, voiceover, and in-browser video render
   - `create.html`, `create.js` — creation-path chooser
+  - `manifest.webmanifest`, `sw.js`, `pwa.js`, `offline.html`, `icons/` — installable app (Home Screen icon, offline launch, install hint)
 - `worker/index.js` — Worker routes, model configuration, validation, and provider integrations
 - `worker/assets.js` — generated embedded Site assets
 - `scripts/build.sh` — asset embedding and Worker build
@@ -80,6 +96,10 @@ Video export is available when a story fits `MAX_VIDEO_CLIPS` (24 clips of about
 `/bedtime.html` permanently redirects to `/studio.html?path=bedtime`.
 
 ## Changes in v27
+
+Installable app
+- Add to Home Screen on iOS and install on Android/desktop browsers, with a StoryVerse icon cut from the brand sheet, full-screen launch, notch-safe layout, offline launch with saved drafts, and a one-time install tip.
+
 
 Fixes
 - Claude story and scene-plan requests failed on every call: they sent `temperature`, which current Claude models reject. They now use structured outputs (`output_config.format`) and opt into Anthropic's server-side refusal fallback.
