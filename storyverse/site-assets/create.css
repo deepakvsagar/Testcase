@@ -14,3 +14,5 @@
 
 /* iOS app: the Account button must stay visible on phones, where other header buttons are hidden */
 header>.button.native-account{display:inline-flex}
+/* Home Screen web app: content scrolls under the translucent status bar, so keep a solid strip behind it */
+html.standalone:not(.native-app)::after{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:#080e22f0;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);z-index:60;pointer-events:none}

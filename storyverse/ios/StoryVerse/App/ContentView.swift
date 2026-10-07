@@ -12,8 +12,10 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color("LaunchBackground").ignoresSafeArea()
+            // The page starts below the status bar so scrolled content never runs
+            // under the clock or Dynamic Island; it still extends under the home indicator.
             StoryWebView(webView: store.webView)
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container, edges: .bottom)
                 .opacity(store.state == .loaded ? 1 : 0)
             switch store.state {
             case .loading:
