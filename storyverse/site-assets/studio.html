@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Story studio · StoryVerse</title><meta name="description" content="Write, plan, and produce your story in the StoryVerse studio: Bedtime Bestie, Drama Dream, Magnum Opus, or Curious Class."><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%230b112a'/%3E%3Cpath d='M8 12L20 18L32 12V28L20 33L8 28Z' fill='%23936cff'/%3E%3Cpath d='M20 18V33' stroke='white'/%3E%3C/svg%3E"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="canvas.css"><link rel="stylesheet" href="create.css"><link rel="stylesheet" href="studio.css"></head>
+<body class="studio-page"><header><a class="brand" href="/" aria-label="StoryVerse home"><span class="brand-icon" aria-hidden="true"></span><span>Story<span class="gradient">Verse</span></span></a><nav aria-label="Main navigation"><a class="create-nav" aria-current="page" href="/create.html">Create my world</a><a href="/#how">How it works</a><a href="/#worlds">Explore stories</a><a href="/#continuity">Why StoryVerse</a></nav><a class="button small" href="/create.html">Switch story type</a></header>
+<main class="studio" data-path="bedtime">
+<div class="studio-top"><div><a href="/create.html" class="back-link">All creation paths</a><h1 id="studio-title">Story <span class="gradient">studio</span></h1><p id="studio-tagline">Loading your studio…</p></div><span class="studio-badge" id="studio-badge"></span></div>
+<div class="restore-banner" id="restore-banner" role="status" hidden><span id="restore-text">Welcome back. Your saved draft has been restored.</span><button type="button" class="secondary" id="start-fresh">Start a new story</button></div>
+<nav class="stage-nav" aria-label="Creation steps"><button data-step="0" aria-current="step">01 <span>Imagine</span></button><button data-step="1" disabled>02 <span>Story</span></button><button data-step="2" disabled>03 <span>Scenes</span></button><button data-step="3" disabled>04 <span>Voice</span></button><button data-step="4" disabled>05 <span>Finish</span></button></nav>
+
+<section class="stage" data-panel="0"><div class="stage-heading"><span class="eyebrow">START WITH A SPARK</span><h2>What shall we dream up?</h2><p id="idea-intro">Tell us about a character or adventure, then let AI draft a story and scenes for you to edit.</p></div>
+<form id="idea-form" novalidate><label for="idea" id="idea-label">Your story idea</label><textarea id="idea" rows="4" maxlength="1200" required placeholder="A little fox is afraid of the dark, until a firefly helps him find the stars…"></textarea>
+<div class="dictation-row"><button type="button" class="secondary" id="dictate">Speak my idea</button><span id="speech-status" role="status">You can also type your idea.</span></div>
+<div class="settings-grid">
+<label id="age-field">Audience age<select id="age"></select></label>
+<label id="audience-field" hidden><span id="audience-label">Who is it for?</span><input id="audience" maxlength="160" autocomplete="off"></label>
+<label>Story length<select id="length"></select></label>
+<label>Story mood<select id="mood"></select></label>
+<label class="wide">AI model<select id="model" aria-describedby="model-note"><option value="">Loading available models…</option></select><small id="model-note">Models without a connected server key are marked.</small></label>
+</div>
+<p class="help">AI directs the realistic film look, character design, camera, lighting, colors, and movement from your story.</p>
+<div class="stage-actions"><div class="action-group"><button type="button" class="secondary" id="sample">Try a sample story</button><button type="button" class="secondary" id="import-project">Open a saved project</button><input type="file" id="import-file" accept="application/json,.json" hidden></div><div class="action-group"><button type="submit" class="secondary">Write my own script</button><button type="button" class="button" id="generate-ai">Generate story with AI</button></div></div>
+<p id="generation-status" role="status" aria-live="polite"></p>
+<p class="help">Sign in to generate. Free-tier provider prompts may be used to improve their products. Don’t enter children’s full names, addresses, or other private details.</p></form></section>
+
+<section class="stage" data-panel="1" hidden><div class="stage-heading"><span class="eyebrow">FIND YOUR STORY’S HEART</span><h2>Make every word yours.</h2><p id="story-source">Write or paste your story below.</p></div>
+<div class="idea-summary" id="idea-summary"></div>
+<label for="story-title">Story title</label><input id="story-title" maxlength="120" placeholder="Give your story a name">
+<label for="script">Story script</label><textarea id="script" rows="14" maxlength="40000" placeholder="Write or paste the story you want to tell. Use a blank line between scenes."></textarea>
+<div class="script-meta"><span id="word-count" aria-live="polite">0 words</span><span id="word-target"></span></div>
+<div class="length-meter" aria-hidden="true"><span id="length-bar"></span></div>
+<p id="timing-warning" role="status"></p>
+<p class="help">Separate scenes with blank lines. StoryVerse carries your paragraphs into the storyboard without rewriting them.</p>
+<div class="stage-actions"><button class="secondary" data-back="0">Back to idea</button><button class="button" id="approve-story">Approve story &amp; review scenes</button></div><p class="error" id="story-error" role="alert"></p></section>
+
+<section class="stage" data-panel="2" hidden><div class="stage-heading"><span class="eyebrow">ONE MOMENT AT A TIME</span><h2>Shape your scenes.</h2><p>The selected AI model plans each scene’s shot, camera, lighting, palette, composition, and motion. Edit, reorder, or add scenes; only scenes you change are re-planned.</p></div>
+<div id="scenes"></div>
+<div class="scene-tools"><button class="secondary" id="add-scene">Add a scene</button><button class="secondary" id="replan-all">Re-plan every scene</button><span id="scene-count" class="help"></span></div>
+<div class="stage-actions"><button class="secondary" data-back="1">Back to story</button><button class="button" id="approve-scenes">Plan &amp; approve scenes</button></div><p class="error" id="scene-error" role="alert"></p></section>
+
+<section class="stage" data-panel="3" hidden><div class="stage-heading"><span class="eyebrow">GIVE IT A VOICE</span><h2>A voice for the adventure.</h2><p>Preview with a voice available on your device. A finished video gets a separate AI-generated narrator recording.</p></div>
+<div class="settings-grid"><label>Device voice<select id="voice"></select></label><label>Speaking pace<select id="pace"><option value="0.85">Gentle</option><option value="1" selected>Natural</option><option value="1.15">Lively</option></select></label></div>
+<div class="voice-controls"><button class="button" id="listen">Listen to my story</button><button class="secondary" id="stop">Stop</button></div><p id="voice-status" role="status"></p>
+<div class="stage-actions"><button class="secondary" data-back="2">Back to scenes</button><button class="button" id="finish">Review my project</button></div></section>
+
+<section class="stage" data-panel="4" hidden><div class="stage-heading"><span class="eyebrow">YOUR STORY, READY FOR ITS NEXT CHAPTER</span><h2 id="finished-title">Your project</h2><p>Your story and scene directions are ready to take into production.</p></div>
+<dl id="project-summary"></dl>
+<section class="production-note export-panel"><h3>Create realistic video with narration</h3><p>Generate moving, photorealistic footage for each story beat, add an AI narrator, and render one video in your browser. No subtitles.</p>
+<div class="settings-grid"><label>Video layout<select id="video-layout"><option value="9:16">Portrait · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><label>Video AI model<select id="video-model" required><option value="">Loading video models…</option></select><small>Choose the quality and cost tier for AI-generated footage.</small></label></div>
+<div class="estimate-card"><strong id="cost-estimate">Loading cost estimate…</strong><span id="voice-cost-note">Veo generates 8-second clips. A separate Gemini voiceover is added to the final video.</span></div>
+<label class="cost-ack"><input type="checkbox" id="cost-acknowledged"> I understand AI video generation may be billed to the Gemini API account. This estimate is approximate; actual charges depend on provider pricing and usage.</label>
+<p class="help">The model decides each shot’s camera, lighting, colors, and movement from your scene plan. Character continuity is guided by the full story context, but separate AI shots may vary slightly.</p>
+<p id="asset-status" role="status">Video AI model choices are loading.</p>
+<div class="voice-controls"><button class="button" id="render-video" disabled>Create AI video &amp; voiceover</button><button class="secondary" id="cancel-render" disabled>Cancel</button></div>
+<progress id="render-progress" max="100" value="0" aria-label="Video generation progress" hidden></progress><p id="render-status" role="status" aria-live="polite"></p>
+<canvas id="render-canvas" hidden></canvas><video id="rendered-video" controls playsinline hidden></video>
+<div class="voice-controls"><button class="button" id="save-video" disabled>Download video</button><button class="secondary" id="share-video" disabled>Share video to an app</button></div>
+<p class="help" id="format-note">Export format depends on your browser: MP4 when supported, otherwise WebM.</p>
+<div class="social-handoff"><h3>Publish to your social accounts</h3><p>Download the video, then upload it in your chosen app. The device share menu may offer Instagram, Facebook, or YouTube if installed.</p><div class="platform-links"><a href="https://studio.youtube.com/" target="_blank" rel="noopener noreferrer">Open YouTube Studio</a><a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer">Open Instagram</a><a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer">Open Facebook</a></div><p class="help">These links open the platforms. They do not upload or publish your video.</p></div></section>
+<div class="stage-actions"><button class="secondary" data-back="3">Back to voice</button><div class="action-group"><button class="secondary" id="download-script">Download script (.txt)</button><button class="button" id="download">Save project file (.json)</button></div></div><p id="download-status" role="status"></p></section>
+<p class="session-note" id="save-note">Your draft is saved automatically in this browser.</p></main>
+<footer><a class="footer-brand" href="/">Story<span class="gradient">Verse</span></a><span>Imagine. Create. Continue.</span><span>© 2026 MaVir Technologies</span></footer>
+<script src="studio.js?v=27"></script><script type="module" src="video-renderer.js?v=27"></script></body></html>

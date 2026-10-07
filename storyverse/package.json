@@ -1,0 +1,11 @@
+{
+  "name": "storyverse",
+  "version": "27.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "validate": "node scripts/validate-artifact.mjs",
+    "test:worker": "node scripts/test-worker.mjs"
+  }
+}
