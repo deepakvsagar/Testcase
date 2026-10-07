@@ -147,7 +147,7 @@ void loadVideoModels();
 
 async function parseError(response, fallback) {
   const data = await response.json().catch(() => ({}));
-  if (response.status === 401) throw Error('Sign in with ChatGPT, then return here to generate the video.');
+  if (response.status === 401) throw Error(window.storyverseNative ? 'Sign in from Account, then create the video again.' : 'Sign in with ChatGPT, then return here to generate the video.');
   const error = Error(data.error || fallback);
   error.noVideoJobAccepted = data.noVideoJobAccepted === true;
   error.videoSubmissionUncertain = data.videoSubmissionUncertain === true;
@@ -342,7 +342,7 @@ function showResult(blob, project) {
   player.hidden = false;
   $('save-video').disabled = false;
   const file = new File([blob], renderName, { type: blob.type.split(';')[0] });
-  $('share-video').disabled = !(navigator.share && navigator.canShare?.({ files: [file] }));
+  $('share-video').disabled = !window.storyverseNative && !(navigator.share && navigator.canShare?.({ files: [file] }));
   const format = blob.type.includes('mp4') ? 'MP4' : 'WebM';
   $('format-note').textContent = `${format} · AI-generated moving footage + clean voiceover · no subtitles. Review before sharing; captions can be added later in your social app.`;
 }
@@ -407,6 +407,7 @@ $('render-video').addEventListener('click', async () => {
     showResult(result, project);
     $('render-progress').value = 100;
     status('Your realistic video and narrator are ready. Play it back to review before downloading or sharing.');
+    window.StoryVerseApp?.haptic('success');
   } catch (error) {
     clearOutput();
     const suffix = acceptedVideoJobs > 0
@@ -438,14 +439,23 @@ function outputIsCurrent() {
   if (!renderBlob || renderSnapshot !== projectSnapshot()) { clearOutput(); status('Your story changed. Generate a new video for the updated project.'); return false; }
   return true;
 }
+// In the iOS app both buttons open the native share sheet, which offers Save Video.
+async function shareNatively() {
+  try {
+    const result = await window.StoryVerseApp.shareFile(renderBlob, renderName);
+    status(result?.completed ? 'Video saved or shared.' : 'Sharing closed. Your video is still available.');
+  } catch (error) { status(error?.message || 'The video couldn’t be shared.'); }
+}
 $('save-video').addEventListener('click', () => {
   if (!outputIsCurrent()) return;
+  if (window.storyverseNative) { void shareNatively(); return; }
   const link = document.createElement('a');
   link.href = renderUrl; link.download = renderName; link.click();
   status('Video download requested. Check your browser downloads or save menu.');
 });
 $('share-video').addEventListener('click', async () => {
   if (!outputIsCurrent()) return;
+  if (window.storyverseNative) { await shareNatively(); return; }
   const file = new File([renderBlob], renderName, { type: renderBlob.type.split(';')[0] });
   try {
     if (!navigator.canShare?.({ files: [file] })) throw Error('File sharing is unavailable here. Download the video and upload it in your social app.');

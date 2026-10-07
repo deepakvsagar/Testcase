@@ -65,10 +65,24 @@ function constantTimeEqual(left, right) {
   return diff === 0;
 }
 
-function requestIdentity(request, env) {
+// Same-origin check. Browsers attach Origin to POSTs but not to same-origin GETs,
+// so a GET without Origin is accepted unless Fetch Metadata marks it cross-site.
+function sameSiteRequest(request) {
   const origin = request.headers.get('origin');
-  const siteOriginOk = Boolean(origin && origin === new URL(request.url).origin);
+  if (origin) return origin === new URL(request.url).origin;
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  const site = request.headers.get('sec-fetch-site');
+  return !site || site === 'same-origin' || site === 'none';
+}
+
+async function requestIdentity(request, env) {
+  const siteOriginOk = sameSiteRequest(request);
   const authorization = request.headers.get('authorization') || '';
+  // The iOS app signs in with Apple and sends a StoryVerse session token.
+  if (siteOriginOk && authorization.startsWith('Bearer sv1.')) {
+    const session = await readAppSession(authorization.slice(7), env);
+    return session ? { userId: `apple:${session.sub}`, mobile: true } : null;
+  }
   const mobileKey = env.STORYVERSE_MOBILE_TEST_TOKEN;
   const mobileOk = Boolean(mobileKey && constantTimeEqual(authorization, `Bearer ${mobileKey}`));
   if (!siteOriginOk && !mobileOk) return null;
@@ -76,6 +90,94 @@ function requestIdentity(request, env) {
   if (forwardedId) return { userId: `site:${forwardedId}`, mobile: false };
   if (mobileOk) return { userId: `mobile-test:${mobileKey.slice(0, 16)}`, mobile: true };
   return null;
+}
+
+// ---------- Sign in with Apple (iOS app) ----------
+
+const APPLE_ISSUER = 'https://appleid.apple.com';
+const APP_SESSION_DAYS = 30;
+const authRequestsByClient = new Map();
+let appleKeysCache = { keys: null, fetchedAt: 0 };
+
+function base64UrlToText(value) { return new TextDecoder().decode(base64UrlToBytes(value)); }
+
+async function appleSigningKey(kid) {
+  const stale = Date.now() - appleKeysCache.fetchedAt > 60 * 60 * 1000;
+  if (!appleKeysCache.keys || stale || !appleKeysCache.keys.some((key) => key.kid === kid)) {
+    const response = await fetch(`${APPLE_ISSUER}/auth/keys`, { signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) throw new Error('apple-keys-unavailable');
+    const payload = await response.json();
+    appleKeysCache = { keys: Array.isArray(payload?.keys) ? payload.keys : [], fetchedAt: Date.now() };
+  }
+  const jwk = appleKeysCache.keys.find((key) => key.kid === kid && key.kty === 'RSA');
+  return jwk ? crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']) : null;
+}
+
+async function sha256Hex(text) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// Verifies an Apple identity token: signature, issuer, audience (the app's bundle
+// ID), expiry, and the one-time nonce the app generated for this sign-in.
+async function verifyAppleIdentityToken(token, rawNonce, bundleId) {
+  if (typeof token !== 'string' || token.length > 4_000) return null;
+  const [header, payload, signature, extra] = token.split('.');
+  if (!header || !payload || !signature || extra) return null;
+  let head; let claims;
+  try { head = JSON.parse(base64UrlToText(header)); claims = JSON.parse(base64UrlToText(payload)); } catch { return null; }
+  if (head?.alg !== 'RS256' || typeof head.kid !== 'string') return null;
+  const key = await appleSigningKey(head.kid);
+  if (!key) return null;
+  const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, base64UrlToBytes(signature), new TextEncoder().encode(`${header}.${payload}`));
+  if (!valid) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.iss !== APPLE_ISSUER || claims.aud !== bundleId || !Number.isFinite(claims.exp) || claims.exp < now) return null;
+  if (typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 200) return null;
+  if (typeof rawNonce !== 'string' || rawNonce.length < 16 || rawNonce.length > 200 || claims.nonce !== await sha256Hex(rawNonce)) return null;
+  return { sub: claims.sub };
+}
+
+async function sessionKey(secret) {
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(`storyverse-app-session:${secret}`), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+async function makeAppSession(sub, env) {
+  const expiresAt = Date.now() + APP_SESSION_DAYS * 24 * 60 * 60 * 1000;
+  const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ sub, expiresAt })));
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await sessionKey(env.STORYVERSE_SESSION_SECRET), new TextEncoder().encode(payload)));
+  return { token: `sv1.${payload}.${bytesToBase64Url(signature)}`, expiresAt };
+}
+
+async function readAppSession(token, env) {
+  if (!env.STORYVERSE_SESSION_SECRET || typeof token !== 'string' || token.length > 2_000) return null;
+  const [version, payload, signature, extra] = token.split('.');
+  if (version !== 'sv1' || !payload || !signature || extra) return null;
+  try {
+    const valid = await crypto.subtle.verify('HMAC', await sessionKey(env.STORYVERSE_SESSION_SECRET), base64UrlToBytes(signature), new TextEncoder().encode(payload));
+    if (!valid) return null;
+    const value = JSON.parse(base64UrlToText(payload));
+    return typeof value.sub === 'string' && Number.isFinite(value.expiresAt) && value.expiresAt > Date.now() ? value : null;
+  } catch { return null; }
+}
+
+function appSignInConfigured(env) {
+  return Boolean(env.APPLE_BUNDLE_ID && typeof env.STORYVERSE_SESSION_SECRET === 'string' && env.STORYVERSE_SESSION_SECRET.length >= 32);
+}
+
+async function appleSignIn(request, env) {
+  if (!sameSiteRequest(request)) return json({ error: 'Request origin could not be verified.' }, 403);
+  if (!appSignInConfigured(env)) return json({ error: 'Sign in with Apple is not configured on the server.' }, 503);
+  const client = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (!takeRequestSlot(authRequestsByClient, client, 20, 60_000)) return json({ error: 'Too many sign-in attempts. Wait a minute and try again.' }, 429, { 'retry-after': '60' });
+  const body = await readJson(request, 8_000);
+  if (body.tooLarge || body.invalid) return json({ error: 'Send a valid sign-in request.' }, 400);
+  let identity;
+  try { identity = await verifyAppleIdentityToken(body.value?.identityToken, body.value?.nonce, env.APPLE_BUNDLE_ID); }
+  catch { return json({ error: 'Apple sign-in could not be checked right now. Try again.' }, 502); }
+  if (!identity) return json({ error: 'Apple sign-in could not be verified. Try again.' }, 401);
+  const session = await makeAppSession(identity.sub, env);
+  return json({ session: session.token, expiresAt: session.expiresAt });
 }
 
 function identityError(request, message) {
@@ -253,7 +355,7 @@ async function runStructuredRequest(model, env, prompt, schema, maxOutputTokens,
 }
 
 async function generate(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT or use a configured mobile tester token to generate a story.');
   const body = await readJson(request, MAX_REQUEST_BYTES);
   if (body.tooLarge) return json({ error: 'Your brief is too long.' }, 413);
@@ -279,7 +381,7 @@ function planSchema() {
 }
 
 async function planScenes(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT or use a configured mobile tester token to generate a visual plan.');
   const body = await readJson(request, 40_000);
   if (body.tooLarge) return json({ error: 'Your visual brief is too long.' }, 413);
@@ -299,7 +401,7 @@ async function planScenes(request, env) {
 }
 
 async function generateSceneImage(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT or use a configured mobile tester token to generate scene art.');
   let input;
   try {
@@ -457,7 +559,7 @@ function videoProviderFields(message) {
 }
 
 async function generateVideoClip(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT to generate realistic video.');
   let input;
   try {
@@ -519,7 +621,7 @@ async function fetchVideoOperation(operationName, apiKey) {
 }
 
 async function videoJobStatus(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT to check this video job.');
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return json({ error: 'AI video generation is not connected. Add the server secret GEMINI_API_KEY.' }, 503);
@@ -539,7 +641,7 @@ async function videoJobStatus(request, env) {
 }
 
 async function downloadVideoJob(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT to download this video job.');
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return json({ error: 'AI video generation is not connected. Add the server secret GEMINI_API_KEY.' }, 503);
@@ -569,7 +671,7 @@ async function downloadVideoJob(request, env) {
 }
 
 async function generateVoiceover(request, env) {
-  const identity = requestIdentity(request, env);
+  const identity = await requestIdentity(request, env);
   if (!identity) return identityError(request, 'Sign in with ChatGPT to generate the narrator voiceover.');
   let input;
   try {
@@ -645,6 +747,7 @@ function assetResponse(path) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/auth/apple') return request.method === 'POST' ? appleSignIn(request, env) : json({ error: 'Use POST to sign in.' }, 405, { allow: 'POST' });
     if (url.pathname === '/api/paths') return request.method === 'GET' ? storyPaths() : json({ error: 'Use GET to list story paths.' }, 405, { allow: 'GET' });
     if (url.pathname === '/api/models') return request.method === 'GET' ? availableModels(request, env) : json({ error: 'Use GET to list models.' }, 405, { allow: 'GET' });
     if (url.pathname === '/api/visual-models') return request.method === 'GET' ? availableVisualModels(env) : json({ error: 'Use GET to list visual models.' }, 405, { allow: 'GET' });

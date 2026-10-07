@@ -244,7 +244,7 @@ assert.equal(pathList.wordsPerMinute, 120);
 const redirect = await worker.fetch(new Request('https://storyverse.test/bedtime.html'), {});
 assert.equal(redirect.status, 301, 'the old Bedtime page redirects');
 assert.equal(redirect.headers.get('location'), 'https://storyverse.test/studio.html?path=bedtime');
-for (const page of ['/studio.html', '/studio.js', '/create.js', '/studio.css']) assert.equal((await worker.fetch(new Request(`https://storyverse.test${page}`), {})).status, 200, `${page} is embedded`);
+for (const page of ['/studio.html', '/studio.js', '/create.js', '/studio.css', '/privacy.html', '/support.html', '/legal.css']) assert.equal((await worker.fetch(new Request(`https://storyverse.test${page}`), {})).status, 200, `${page} is embedded`);
 assert.equal((await worker.fetch(new Request('https://storyverse.test/video-export.js'), {})).status, 404, 'unused export script is no longer shipped');
 
 const videoLimits = await (await worker.fetch(new Request('https://storyverse.test/api/video-models'), {})).json();
@@ -347,4 +347,64 @@ for (const page of ['index.html', 'create.html', 'studio.html']) {
   for (const tag of ['rel="manifest"', 'rel="apple-touch-icon"', 'apple-mobile-web-app-capable', 'viewport-fit=cover', 'src="pwa.js']) assert.ok(html.includes(tag), `${page} includes ${tag}`);
 }
 
-console.log('Worker checks passed: auth, input validation, all four story paths, Claude structured outputs and refusals, provider-specific errors, story and scene planning, image-model availability, authenticated Veo jobs and limits, signed job access, secure video download, generated WAV voiceover, studio wiring, and the installable app.');
+// ---- same-origin GETs (browsers omit Origin) and Sign in with Apple ----
+{
+  const ticketEnv = { GEMINI_API_KEY: 'test-secret' };
+  globalThis.fetch = async () => Response.json({ name: 'models/veo-3.1-fast-generate-preview/operations/get-origin-job' });
+  const job = (await (await post('/api/generate-video', { model: 'veo-3.1-fast-generate-preview', path: 'bedtime', title: 'T', storyContext: 'C', narration: 'N', visualPlan: plan, shotIndex: 1, shotCount: 1, aspectRatio: '9:16', durationSeconds: 8 }, 'get-origin-user', ticketEnv)).json()).job;
+  globalThis.fetch = async () => Response.json({ done: false });
+  const statusUrl = `https://storyverse.test/api/video-job-status?job=${encodeURIComponent(job)}`;
+  const browserGet = await worker.fetch(new Request(statusUrl, { headers: { 'sec-fetch-site': 'same-origin', 'oai-authenticated-user-id': 'get-origin-user' } }), ticketEnv);
+  assert.equal(browserGet.status, 200, 'a same-origin browser GET without Origin can poll its video job');
+  const crossSiteGet = await worker.fetch(new Request(statusUrl, { headers: { 'sec-fetch-site': 'cross-site', 'oai-authenticated-user-id': 'get-origin-user' } }), ticketEnv);
+  assert.equal(crossSiteGet.status, 401, 'cross-site GETs are still refused');
+  const crossSitePost = await worker.fetch(new Request('https://storyverse.test/api/generate-story', { method: 'POST', headers: { 'sec-fetch-site': 'same-origin', 'oai-authenticated-user-id': 'x', 'content-type': 'application/json' }, body: JSON.stringify(idea) }), ticketEnv);
+  assert.equal(crossSitePost.status, 401, 'POSTs still require a matching Origin');
+  globalThis.fetch = originalFetch;
+}
+{
+  const { subtle } = globalThis.crypto;
+  const keys = await subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const publicJwk = { ...(await subtle.exportKey('jwk', keys.publicKey)), kid: 'test-kid', use: 'sig', alg: 'RS256' };
+  const b64url = (bytes) => Buffer.from(bytes).toString('base64url');
+  const sha = async (text) => Buffer.from(await subtle.digest('SHA-256', new TextEncoder().encode(text))).toString('hex');
+  const rawNonce = 'nonce-from-the-app-123456';
+  const signToken = async (claims, header = { alg: 'RS256', kid: 'test-kid' }, key = keys.privateKey) => {
+    const body = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
+    return `${body}.${b64url(await subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(body)))}`;
+  };
+  const good = { iss: 'https://appleid.apple.com', aud: 'com.example.storyverse', sub: '000123.apple-user', exp: Math.floor(Date.now() / 1000) + 600, nonce: await sha(rawNonce) };
+  const appEnv = { APPLE_BUNDLE_ID: 'com.example.storyverse', STORYVERSE_SESSION_SECRET: 'x'.repeat(40), GEMINI_API_KEY: 'test-secret' };
+  let keyFetches = 0;
+  globalThis.fetch = async (requestUrl) => {
+    if (String(requestUrl) === 'https://appleid.apple.com/auth/keys') { keyFetches++; return Response.json({ keys: [publicJwk] }); }
+    throw new Error('unexpected fetch ' + requestUrl);
+  };
+  const signIn = (identityToken, nonce = rawNonce, env = appEnv) => worker.fetch(new Request('https://storyverse.test/api/auth/apple', { method: 'POST', headers: { origin: 'https://storyverse.test', 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.9' }, body: JSON.stringify({ identityToken, nonce }) }), env);
+  try {
+    assert.equal((await signIn(await signToken(good), rawNonce, {})).status, 503, 'Apple sign-in needs its server configuration');
+    const accepted = await signIn(await signToken(good));
+    assert.equal(accepted.status, 200, 'a valid Apple identity token signs in');
+    const { session, expiresAt } = await accepted.json();
+    assert.match(session, /^sv1\./u);
+    assert.ok(expiresAt > Date.now() + 29 * 24 * 60 * 60 * 1000, 'sessions last 30 days');
+    assert.equal((await signIn(await signToken({ ...good, aud: 'com.other.app' }))).status, 401, 'tokens for another app are refused');
+    assert.equal((await signIn(await signToken({ ...good, exp: Math.floor(Date.now() / 1000) - 5 }))).status, 401, 'expired tokens are refused');
+    assert.equal((await signIn(await signToken(good), 'a-different-nonce-value')).status, 401, 'a replayed token with another nonce is refused');
+    assert.equal((await signIn(await signToken({ ...good, iss: 'https://evil.example' }))).status, 401, 'tokens from another issuer are refused');
+    const forger = await subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+    assert.equal((await signIn(await signToken(good, undefined, forger.privateKey))).status, 401, 'forged signatures are refused');
+    assert.equal((await signIn(await signToken(good, { alg: 'none', kid: 'test-kid' }))).status, 401, 'unsigned tokens are refused');
+    assert.equal(keyFetches, 1, "Apple's signing keys are cached");
+
+    const authed = (token) => worker.fetch(new Request('https://storyverse.test/api/generate-story', { method: 'POST', headers: { origin: 'https://storyverse.test', 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ ...idea, model: 'gemini-3.8-flash' }) }), appEnv);
+    globalThis.fetch = async () => Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ title: 'App Story', scenes: [{ narration: 'The moon went away one night, and the little fox looked everywhere for it, under logs and over hills.', visualPlan: plan }, { narration: 'Three fireflies found it hiding behind a sleepy cloud, and everyone drifted happily to sleep.', visualPlan: plan }] }) }] } }] });
+    assert.equal((await authed(session)).status, 200, 'an app session can generate a story');
+    const [v, , signature] = session.split('.');
+    const tampered = Buffer.from(JSON.stringify({ sub: 'someone-else', expiresAt: Date.now() + 1e9 })).toString('base64url');
+    assert.equal((await authed(`${v}.${tampered}.${signature}`)).status, 401, 'a tampered session is refused');
+    assert.equal((await worker.fetch(new Request('https://storyverse.test/api/generate-story', { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify(idea) }), appEnv)).status, 403, 'app sessions only work from the StoryVerse origin');
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+console.log('Worker checks passed: auth, input validation, all four story paths, Claude structured outputs and refusals, provider-specific errors, story and scene planning, image-model availability, authenticated Veo jobs and limits, signed job access, secure video download, generated WAV voiceover, studio wiring, the installable app, same-origin GETs, and Sign in with Apple sessions.');

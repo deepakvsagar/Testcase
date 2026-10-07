@@ -2,13 +2,50 @@
 // in a browser rather than as the installed app, offers a way to install it.
 'use strict';
 
+// Inside the StoryVerse iOS app, `window.storyverseNative` is injected by the app
+// before any page script runs. StoryVerseApp wraps it for the site's scripts.
+window.StoryVerseApp = (() => {
+  const native = window.storyverseNative || null;
+  const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  return {
+    native: Boolean(native),
+    signedIn: () => Boolean(native?.signedIn),
+    signIn: () => native.call('signIn'),
+    haptic: (style = 'light') => { native?.call('haptic', { style }).catch(() => {}); },
+    // Opens the iOS share sheet (Save Video, Save to Files, AirDrop, apps).
+    async shareFile(blob, fileName) {
+      return native.call('shareFile', { base64: await blobToBase64(blob), fileName });
+    },
+  };
+})();
+
+if (window.StoryVerseApp.native) {
+  document.documentElement.classList.add('native-app', 'standalone');
+  window.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('header');
+    if (!header || header.querySelector('.native-account')) return;
+    const account = document.createElement('button');
+    account.type = 'button';
+    account.className = 'button small native-account';
+    account.textContent = 'Account';
+    account.addEventListener('click', () => window.storyverseNative.call('openAccount').catch(() => {}));
+    header.querySelector(':scope > .button')?.remove();
+    header.append(account);
+  });
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* app still works online */ }); });
 }
 
 (() => {
   const DISMISSED = 'storyverse:install-hint-dismissed';
-  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const standalone = window.StoryVerseApp.native || window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (standalone) { document.documentElement.classList.add('standalone'); return; }
   try { if (localStorage.getItem(DISMISSED)) return; } catch { /* storage blocked: still offer the hint */ }
 

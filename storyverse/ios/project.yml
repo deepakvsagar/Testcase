@@ -1,0 +1,82 @@
+# Generate StoryVerse.xcodeproj with: brew install xcodegen && xcodegen
+name: StoryVerse
+options:
+  bundleIdPrefix: com.mavir
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    # The deployed StoryVerse site the app opens. Host only, no https://.
+    STORYVERSE_SITE_HOST: storyverse.example.com
+    # Your Apple Developer Team ID (Xcode → Signing & Capabilities fills this in too).
+    DEVELOPMENT_TEAM: ""
+targets:
+  StoryVerse:
+    type: application
+    platform: iOS
+    sources:
+      - path: StoryVerse
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mavir.storyverse
+        PRODUCT_NAME: StoryVerse
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES
+    entitlements:
+      path: StoryVerse/StoryVerse.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+    info:
+      path: StoryVerse/Info.plist
+      properties:
+        CFBundleDisplayName: StoryVerse
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        StoryVerseSiteHost: $(STORYVERSE_SITE_HOST)
+        # Lets the web view run the site's service worker (offline drafts) and
+        # keeps all in-app navigation on the StoryVerse domain.
+        WKAppBoundDomains:
+          - $(STORYVERSE_SITE_HOST)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        NSMicrophoneUsageDescription: StoryVerse uses the microphone when you choose “Speak my idea” to dictate a story idea.
+        NSSpeechRecognitionUsageDescription: StoryVerse turns your spoken story idea into text so you can edit it.
+        NSPhotoLibraryAddUsageDescription: StoryVerse saves the story videos you create to your photo library when you choose Save Video.
+  StoryVerseTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: StoryVerseTests
+    dependencies:
+      - target: StoryVerse
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.mavir.storyverse.tests
+schemes:
+  StoryVerse:
+    build:
+      targets:
+        StoryVerse: all
+    test:
+      targets:
+        - StoryVerseTests

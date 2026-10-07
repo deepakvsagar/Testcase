@@ -13,7 +13,11 @@ StoryVerse is a multi-page storytelling app for creating stories, planning scene
 - Built Worker artifact in `dist/`
 - Build, validation, and mocked worker checks
 
-## Install on iPhone and iPad
+## iOS App Store app
+
+`ios/` contains a native SwiftUI app for the App Store: Sign in with Apple, native dictation, the iOS share sheet for videos and files, and in-app account deletion around the StoryVerse site. See [`ios/README.md`](ios/README.md) for setup, the extra `APPLE_BUNDLE_ID` and `STORYVERSE_SESSION_SECRET` secrets, and the release checklist.
+
+## Install on iPhone and iPad (Home Screen web app)
 
 StoryVerse is an installable web app, so it needs no App Store, Mac, or Apple Developer account.
 
@@ -51,6 +55,7 @@ Set provider keys as server-side Site secrets. Never put API keys in browser fil
 - `GEMINI_API_KEY` enables the configured Gemini story and visual models, Veo video models, and Google voiceover.
 - `OPENAI_API_KEY` enables configured OpenAI story and image models.
 - `ANTHROPIC_API_KEY` enables configured Claude story models.
+- `APPLE_BUNDLE_ID` and `STORYVERSE_SESSION_SECRET` enable Sign in with Apple for the iOS app (see `ios/README.md`).
 - `STORYVERSE_MOBILE_TEST_TOKEN` is optional and only needed for the native/mobile test-token path.
 
 Configured model IDs, labels, video price estimates, and the per-path rules (lengths, moods, scene limits) are maintained in `worker/index.js`. The studio reads path rules from `/api/paths` and video limits from `/api/video-models`, so changing `PATHS`, `MAX_VIDEO_CLIPS`, or `MAX_NARRATION_CHARACTERS` there updates the browser too.
@@ -81,6 +86,7 @@ Video export is available when a story fits `MAX_VIDEO_CLIPS` (24 clips of about
 
 | Route | Method | Purpose |
 | --- | --- | --- |
+| `/api/auth/apple` | POST | Exchange a Sign in with Apple identity token for an app session |
 | `/api/paths` | GET | Creation paths and their lengths, moods, and scene limits |
 | `/api/models` | GET | List story models for a story type |
 | `/api/visual-models` | GET | List scene-art models |
@@ -102,6 +108,7 @@ Installable app
 
 
 Fixes
+- Video generation could never finish on the live site: browsers don't send `Origin` on same-origin GETs, so job-status and download checks were refused. Same-origin GETs are now recognised with Fetch Metadata.
 - Claude story and scene-plan requests failed on every call: they sent `temperature`, which current Claude models reject. They now use structured outputs (`output_config.format`) and opt into Anthropic's server-side refusal fallback.
 - The cost estimate never refreshed on reaching the Finish step (`$('[data-panel="4"]')` passed a CSS selector to `getElementById` and threw).
 - `/api/generate-scene-image` rejected the only style the app uses (`Cinematic realism`); it now renders photoreal stills for it.

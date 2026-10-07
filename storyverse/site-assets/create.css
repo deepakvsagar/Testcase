@@ -11,3 +11,6 @@
 .standalone body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);-webkit-tap-highlight-color:transparent}
 .standalone footer{padding-bottom:max(32px,calc(env(safe-area-inset-bottom) + 16px))}
 .offline-page{min-height:100vh;display:grid;place-items:center}.offline-page .button{margin-top:24px}
+
+/* iOS app: the Account button must stay visible on phones, where other header buttons are hidden */
+header>.button.native-account{display:inline-flex}

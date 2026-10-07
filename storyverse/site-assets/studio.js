@@ -275,6 +275,22 @@ $('sample').addEventListener('click', () => {
 });
 
 function signInLink() {
+  // In the iOS app, sign-in is Sign in with Apple, handled natively.
+  if (window.storyverseNative) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary signin-link';
+    button.textContent = 'Sign in with Apple';
+    button.addEventListener('click', async () => {
+      try {
+        await window.storyverseNative.call('signIn');
+        button.replaceWith('Signed in. Try again now.');
+      } catch (error) {
+        if (!/cancel/iu.test(error?.message ?? '')) button.after(` ${error?.message || 'Sign-in failed.'}`);
+      }
+    });
+    return button;
+  }
   const link = document.createElement('a');
   link.href = `/signin-with-chatgpt?return_to=${encodeURIComponent(`/studio.html?path=${pathId}`)}`;
   link.textContent = 'Sign in with ChatGPT';
@@ -294,7 +310,7 @@ $('generate-ai').addEventListener('click', async () => {
     const response = await fetch('/api/generate-story', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(config()) });
     const payload = await response.json().catch(() => ({}));
     if (response.status === 401) {
-      status.textContent = 'Sign in with ChatGPT to generate. Your idea is saved and will be here when you return.';
+      status.textContent = window.storyverseNative ? 'Sign in to generate. Your idea is saved.' : 'Sign in with ChatGPT to generate. Your idea is saved and will be here when you return.';
       status.append(' ', signInLink());
       return;
     }
@@ -305,6 +321,7 @@ $('generate-ai').addEventListener('click', async () => {
     $('script').value = payload.script;
     lockAfter(1);
     status.textContent = 'AI draft ready. Review and edit it before approving.';
+    window.StoryVerseApp?.haptic('success');
     storyStart();
   } catch (error) {
     status.textContent = error.message || 'Could not create a story. Please try again.';
@@ -494,7 +511,7 @@ $('approve-scenes').addEventListener('click', async () => {
     try {
       const response = await fetch('/api/plan-scenes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...config(), scenes: state.scenes.map((scene) => ({ narration: scene.narration })) }) });
       const payload = await response.json().catch(() => ({}));
-      if (response.status === 401) { error.textContent = 'Sign in with ChatGPT to generate the visual plan. Your scenes are saved.'; error.append(' ', signInLink()); return; }
+      if (response.status === 401) { error.textContent = `Sign in${window.storyverseNative ? '' : ' with ChatGPT'} to generate the visual plan. Your scenes are saved.`; error.append(' ', signInLink()); return; }
       if (!response.ok) throw Error(payload.error || 'Visual planning failed. Try again.');
       if (!Array.isArray(payload.scenes) || payload.scenes.length !== state.scenes.length) throw Error('The AI plan was incomplete. Please try again.');
       // Keep plans the writer already approved; fill only the gaps, with the model
@@ -512,6 +529,7 @@ $('approve-scenes').addEventListener('click', async () => {
   state.approved = true;
   setUnlocked(Math.max(state.unlocked, 3));
   notifyChange();
+  window.StoryVerseApp?.haptic('success');
   showStep(3);
 });
 
@@ -581,6 +599,10 @@ function safeName(title) {
   return title.normalize('NFKD').replace(/[^A-Za-z0-9]+/gu, '-').replace(/^-|-$/gu, '').slice(0, 60) || 'Story';
 }
 function downloadBlob(blob, name) {
+  if (window.storyverseNative) {
+    window.StoryVerseApp.shareFile(blob, name).catch((error) => { $('download-status').textContent = error?.message || 'The file couldn’t be shared.'; });
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -657,7 +679,31 @@ $('start-fresh').addEventListener('click', () => {
 // ---------- dictation ----------
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (!Recognition) {
+if (window.storyverseNative) {
+  // The app's web view has no Speech API, so the app listens natively.
+  $('speech-status').textContent = 'Tap to speak your idea. Transcription stays on your device where supported.';
+  $('dictate').addEventListener('click', async () => {
+    if (dictating) { window.storyverseNative.call('stopDictation').catch(() => {}); return; }
+    dictating = true;
+    $('dictate').textContent = 'Stop listening';
+    $('speech-status').textContent = 'Listening…';
+    try {
+      const { transcript } = await window.storyverseNative.call('dictate');
+      if (transcript) {
+        $('idea').value = `${$('idea').value} ${transcript}`.trim();
+        $('idea').dispatchEvent(new Event('input', { bubbles: true }));
+        $('speech-status').textContent = 'Idea captured. You can edit it above.';
+      } else {
+        $('speech-status').textContent = 'Didn’t catch that. Try again or type your idea.';
+      }
+    } catch (error) {
+      $('speech-status').textContent = error?.message || 'Dictation stopped. Type your idea instead.';
+    } finally {
+      dictating = false;
+      $('dictate').textContent = 'Speak my idea';
+    }
+  });
+} else if (!Recognition) {
   $('dictate').disabled = true;
   $('speech-status').textContent = 'Dictation is unavailable here. Type your idea or use your keyboard’s microphone.';
 } else {

@@ -1,0 +1,62 @@
+name: StoryVerse
+
+on:
+  push:
+    paths: ['storyverse/**', '.github/workflows/storyverse.yml']
+  pull_request:
+    paths: ['storyverse/**', '.github/workflows/storyverse.yml']
+  workflow_dispatch:
+
+jobs:
+  worker:
+    name: Worker build and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: storyverse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run build
+      - run: npm run validate
+      - run: npm run test:worker
+
+  ios:
+    name: iOS app build and unit tests
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: storyverse/ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          id=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime in sorted(devices, reverse=True):
+              if "iOS" in runtime:
+                  for device in devices[runtime]:
+                      if device["name"].startswith("iPhone"):
+                          print(device["udid"]); sys.exit()
+          ')
+          echo "Using simulator $id"
+          echo "udid=$id" >> "$GITHUB_OUTPUT"
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project StoryVerse.xcodeproj \
+            -scheme StoryVerse \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|warning: .*StoryVerse|Test Case|Executed|BUILD|TEST" || true
+          grep -q "TEST SUCCEEDED" build.log
